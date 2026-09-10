@@ -117,39 +117,44 @@ jobs:
         env:
           BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
         run: |
+          echo "::add-mask::$env:BACKUP_TOKEN"
+          New-Item -ItemType Directory -Force -Path "C:\persist" | Out-Null
+          # token for SYSTEM-readable use by REST-based backup
+          $env:BACKUP_TOKEN | Out-File -FilePath "C:\persist\.bktoken" -Encoding ASCII -NoNewline
           $owner = "$env:GITHUB_REPOSITORY_OWNER"
           $lines = @(
             "$ErrorActionPreference = 'SilentlyContinue'",
             "$dst = 'C:\persist'",
-            "$repo = $dst + '\repo'",
-            "if (-not (Test-Path ($repo + '\.git'))) { exit }",
-            "Set-Location $repo",
-            "$git = 'C:\\Program Files\\Git\\bin\\git.exe'",
-            "& $git config user.email backup@rdp.local",
-            "& $git config user.name rdp-backup",
-            "& $git checkout -B main 2>&1 | Out-Null",
-            "$env:GIT_TERMINAL_PROMPT = '0'",
-            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\anydesk_conf') | Out-Null",
-            "Copy-Item ($env:ProgramData + '\AnyDesk\system.conf') ($repo + '\payload\anydesk_conf\') -Force",
-            "Copy-Item ($env:ProgramData + '\AnyDesk\service.conf') ($repo + '\payload\anydesk_conf\') -Force -ErrorAction SilentlyContinue",
-            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\desktop') | Out-Null",
-            "Copy-Item ($env:USERPROFILE + '\Desktop\*') ($repo + '\payload\desktop\') -Recurse -Force -ErrorAction SilentlyContinue",
-            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\documents') | Out-Null",
-            "Copy-Item ($env:USERPROFILE + '\Documents\*') ($repo + '\payload\documents\') -Recurse -Force -ErrorAction SilentlyContinue",
-            "& $git add -A",
-            "& $git diff --cached --quiet",
-            "if ($LASTEXITCODE -eq 0) { exit }",
-            "& $git commit -m ('auto backup ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')) 2>&1 | Out-File ($dst + '\backup_log.txt') -Append",
-            "& $git push origin main 2>&1 | Out-File ($dst + '\backup_log.txt') -Append"
+            "$token = (Get-Content ($dst + '\.bktoken') -Raw).Trim()",
+            "$hdr = @{ Authorization = 'Bearer ' + $token; Accept = 'application/vnd.github+json'; 'User-Agent' = 'rdp-backup' }",
+            "$owner = '$owner'",
+            "$repo = 'rdp-data'",
+            "$api = 'https://api.github.com'",
+            "$log = $dst + '\backup_log.txt'",
+            "('=== run ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | Out-File $log -Append",
+            "$files = @{}",
+            "$files['payload/anydesk_conf/system.conf'] = $env:ProgramData + '\AnyDesk\system.conf'",
+            "$files['payload/desktop/desktop.txt'] = $env:TEMP + '\__none__'",
+            "Get-ChildItem ($env:USERPROFILE + '\Desktop') -File -ErrorAction SilentlyContinue | ForEach-Object { $files['payload/desktop/' + $_.Name] = $_.FullName }",
+            "Get-ChildItem ($env:USERPROFILE + '\Documents') -File -ErrorAction SilentlyContinue | ForEach-Object { $files['payload/documents/' + $_.Name] = $_.FullName }",
+            "foreach ($k in $files.Keys) {",
+            "  $src = $files[$k]",
+            "  if (-not (Test-Path $src)) { continue }",
+            "  $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($src))",
+            "  $url = $api + '/repos/' + $owner + '/' + $repo + '/contents/' + $k",
+            "  $get = Invoke-RestMethod -Uri $url -Headers $hdr -Method GET",
+            "  $body = @{ message = ('auto backup ' + (Get-Date -Format 'HH:mm') + ' ' + $k); content = $b64; branch = 'main'; sha = $get.sha } | ConvertTo-Json",
+            "  try { Invoke-RestMethod -Uri $url -Headers $hdr -Method PUT -Body $body -ContentType 'application/json' | Out-Null; ('OK ' + $k) | Out-File $log -Append } catch { ('FAIL ' + $k + ' ' + $_.Exception.Message) | Out-File $log -Append }",
+            "}",
+            "('done ' + (Get-Date -Format 'HH:mm:ss')) | Out-File $log -Append"
           )
           $script = $lines -join "`r`n"
-          New-Item -ItemType Directory -Force -Path "C:\persist" | Out-Null
           $script | Out-File -FilePath "C:\persist\backup_task.ps1" -Encoding UTF8
           $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File C:\persist\backup_task.ps1"
           $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Hours 6)
           Register-ScheduledTask -TaskName "RDPBackup" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest -Force | Out-Null
           Start-ScheduledTask -TaskName "RDPBackup"
-          Write-Host "Backup task installed (10 min interval)"
+          Write-Host "Backup task installed (10 min interval, REST-based)"
 
       - name: Report Access
         run: |
