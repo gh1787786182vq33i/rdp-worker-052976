@@ -35,6 +35,8 @@ jobs:
 
       - name: Install AnyDesk
         continue-on-error: false
+        env:
+          ANYDESK_PASS: ${{ secrets.ANYDESK_PASS }}
         run: |
           $ErrorActionPreference = 'Continue'
           $adUrl = "https://download.anydesk.com/AnyDesk.exe"
@@ -46,7 +48,7 @@ jobs:
           # Set unattended password = flashdev via config echo (CLI set-password needs interactive ack;
           # the supported silent path is ADConfig echo)
           $conf = "$env:ProgramData\AnyDesk\system.conf"
-          cmd /c "echo flashdev| ""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
+          cmd /c "echo $env:ANYDESK_PASS| ""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
           Start-Sleep -Seconds 3
           # restart service so password takes effect
           Stop-Service AnyDesk -ErrorAction SilentlyContinue
