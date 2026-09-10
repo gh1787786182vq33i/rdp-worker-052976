@@ -155,6 +155,11 @@ jobs:
           Register-ScheduledTask -TaskName "RDPBackup" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest -Force | Out-Null
           Start-ScheduledTask -TaskName "RDPBackup"
           Write-Host "Backup task installed (10 min interval, REST-based)"
+          # INLINE TEST: run backup script synchronously and dump its log
+          Start-Sleep -Seconds 20
+          Write-Host "=== INLINE BACKUP TEST ==="
+          if (Test-Path "C:\persist\backup_log.txt") { Get-Content "C:\persist\backup_log.txt" | Write-Host }
+          else { Write-Host "backup_log.txt MISSING after inline run" }
 
       - name: Report Access
         run: |
