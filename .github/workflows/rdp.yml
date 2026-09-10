@@ -19,19 +19,15 @@ jobs:
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User
+        env:
+          RDP_PASS: ${{ secrets.RDP_PASS }}
         run: |
-          Add-Type -AssemblyName System.Security
-          $rawPassword = @()
-          $rawPassword += [char[]](65..90) | Get-Random -Count 4
-          $rawPassword += [char[]](97..122) | Get-Random -Count 4
-          $rawPassword += [char[]](48..57) | Get-Random -Count 4
-          $rawPassword += ([char[]](33..47) + [char[]](58..64)) | Get-Random -Count 4
-          $password = -join ($rawPassword | Sort-Object { Get-Random })
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          # mask so it never appears in logs even in env dumps
+          echo "::add-mask::$env:RDP_PASS"
+          $securePass = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
           New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
       - name: Install AnyDesk
         continue-on-error: false
@@ -39,18 +35,14 @@ jobs:
           ANYDESK_PASS: ${{ secrets.ANYDESK_PASS }}
         run: |
           $ErrorActionPreference = 'Continue'
+          echo "::add-mask::$env:ANYDESK_PASS"
           $adUrl = "https://download.anydesk.com/AnyDesk.exe"
           $adPath = "$env:TEMP\AnyDesk.exe"
           Invoke-WebRequest -Uri $adUrl -OutFile $adPath -UseBasicParsing
-          # Portable run + install as service (unattended mode)
           Start-Process -FilePath $adPath -ArgumentList "--install","C:\AnyDesk","--start-with-win","--silent" -Wait
           Start-Sleep -Seconds 8
-          # Set unattended password = flashdev via config echo (CLI set-password needs interactive ack;
-          # the supported silent path is ADConfig echo)
-          $conf = "$env:ProgramData\AnyDesk\system.conf"
           cmd /c "echo $env:ANYDESK_PASS| ""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
           Start-Sleep -Seconds 3
-          # restart service so password takes effect
           Stop-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
           Start-Service AnyDesk -ErrorAction SilentlyContinue
@@ -70,7 +62,6 @@ jobs:
           }
           Write-Host "ANYDESK_ID_RESOLVED=$adId"
           echo "ANYDESK_ID=$adId" >> $env:GITHUB_ENV
-          # NEVER fail the step over ID/set-password quirks
           exit 0
 
       - name: Install Tailscale
@@ -97,25 +88,20 @@ jobs:
       - name: Open AnyDesk firewall
         run: |
           netsh advfirewall firewall add rule name="AnyDesk" dir=in action=allow program="C:\AnyDesk\AnyDesk.exe" enable=yes
-          # AnyDesk service should be running
           Get-Service AnyDesk | Set-Service -StartupType Automatic
           Start-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
-          $adId2 = (& "C:\AnyDesk\AnyDesk.exe" --get-id) 2>$null
-          if ($adId2) { echo "ANYDESK_ID=$($adId2 | Out-String).Trim()" >> $env:GITHUB_ENV }
 
       - name: Report Access
         run: |
+          # NO passwords in public logs — only IP + AnyDesk ID (useless without the password)
           Write-Host "RDP_IP=$env:TAILSCALE_IP"
           Write-Host "RDP_USER=RDP"
-          Write-Host "RDP_PASS=$env:RDP_PASS"
           Write-Host "ANYDESK_ID=$env:ANYDESK_ID"
-          Write-Host "ANYDESK_PASS=flashdev"
 
       - name: Keep Alive
         run: |
           while ($true) {
-            # Auto-heal: make sure AnyDesk service stays up for the whole session
             $svc = Get-Service AnyDesk -ErrorAction SilentlyContinue
             if ($svc -and $svc.Status -ne 'Running') { Start-Service AnyDesk -ErrorAction SilentlyContinue }
             Start-Sleep -Seconds 120
