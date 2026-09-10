@@ -33,6 +33,24 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
+      - name: Install AnyDesk
+        run: |
+          $adUrl = "https://download.anydesk.com/AnyDesk.exe"
+          $adPath = "$env:TEMP\AnyDesk.exe"
+          Invoke-WebRequest -Uri $adUrl -OutFile $adPath -UseBasicParsing
+          # Portable run + install as service (unattended mode)
+          Start-Process -FilePath $adPath -ArgumentList "--install","C:\AnyDesk","--start-with-win","--silent" -Wait
+          Start-Sleep -Seconds 5
+          # Set unattended password = flashdev
+          & "C:\AnyDesk\AnyDesk.exe" --set-password "flashdev"
+          Start-Sleep -Seconds 3
+          # Get the AnyDesk address/ID
+          $adId = (& "C:\AnyDesk\AnyDesk.exe" --get-id) | Out-String
+          $adId = $adId.Trim()
+          echo "ANYDESK_ID=$adId" >> $env:GITHUB_ENV
+          # Allow direct connections (fallback if relay slow)
+          & "C:\AnyDesk\AnyDesk.exe" --settings
+
       - name: Install Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
@@ -54,12 +72,29 @@ jobs:
           if (-not $tsIP) { Write-Error "No Tailscale IP"; exit 1 }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
+      - name: Open AnyDesk firewall
+        run: |
+          netsh advfirewall firewall add rule name="AnyDesk" dir=in action=allow program="C:\AnyDesk\AnyDesk.exe" enable=yes
+          # AnyDesk service should be running
+          Get-Service AnyDesk | Set-Service -StartupType Automatic
+          Start-Service AnyDesk -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          $adId2 = (& "C:\AnyDesk\AnyDesk.exe" --get-id) 2>$null
+          if ($adId2) { echo "ANYDESK_ID=$($adId2 | Out-String).Trim()" >> $env:GITHUB_ENV }
+
       - name: Report Access
         run: |
           Write-Host "RDP_IP=$env:TAILSCALE_IP"
           Write-Host "RDP_USER=RDP"
           Write-Host "RDP_PASS=$env:RDP_PASS"
+          Write-Host "ANYDESK_ID=$env:ANYDESK_ID"
+          Write-Host "ANYDESK_PASS=flashdev"
 
       - name: Keep Alive
         run: |
-          while ($true) { Start-Sleep -Seconds 300 }
+          while ($true) {
+            # Auto-heal: make sure AnyDesk service stays up for the whole session
+            $svc = Get-Service AnyDesk -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -ne 'Running') { Start-Service AnyDesk -ErrorAction SilentlyContinue }
+            Start-Sleep -Seconds 120
+          }
