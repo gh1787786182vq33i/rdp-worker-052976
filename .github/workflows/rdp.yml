@@ -124,9 +124,11 @@ jobs:
             "$repo = $dst + '\repo'",
             "if (-not (Test-Path ($repo + '\.git'))) { exit }",
             "Set-Location $repo",
-            "git config user.email backup@rdp.local",
-            "git config user.name rdp-backup",
-            "git checkout -B main 2>&1 | Out-Null",
+            "$git = 'C:\\Program Files\\Git\\bin\\git.exe'",
+            "& $git config user.email backup@rdp.local",
+            "& $git config user.name rdp-backup",
+            "& $git checkout -B main 2>&1 | Out-Null",
+            "$env:GIT_TERMINAL_PROMPT = '0'",
             "New-Item -ItemType Directory -Force -Path ($repo + '\payload\anydesk_conf') | Out-Null",
             "Copy-Item ($env:ProgramData + '\AnyDesk\system.conf') ($repo + '\payload\anydesk_conf\') -Force",
             "Copy-Item ($env:ProgramData + '\AnyDesk\service.conf') ($repo + '\payload\anydesk_conf\') -Force -ErrorAction SilentlyContinue",
@@ -134,11 +136,11 @@ jobs:
             "Copy-Item ($env:USERPROFILE + '\Desktop\*') ($repo + '\payload\desktop\') -Recurse -Force -ErrorAction SilentlyContinue",
             "New-Item -ItemType Directory -Force -Path ($repo + '\payload\documents') | Out-Null",
             "Copy-Item ($env:USERPROFILE + '\Documents\*') ($repo + '\payload\documents\') -Recurse -Force -ErrorAction SilentlyContinue",
-            "git add -A",
-            "git diff --cached --quiet",
+            "& $git add -A",
+            "& $git diff --cached --quiet",
             "if ($LASTEXITCODE -eq 0) { exit }",
-            "git commit -m ('auto backup ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')) 2>&1 | Out-File ($dst + '\\backup_log.txt') -Append",
-            "git push origin main 2>&1 | Out-File ($dst + '\\backup_log.txt') -Append"
+            "& $git commit -m ('auto backup ' + (Get-Date -Format 'yyyy-MM-dd HH:mm')) 2>&1 | Out-File ($dst + '\backup_log.txt') -Append",
+            "& $git push origin main 2>&1 | Out-File ($dst + '\backup_log.txt') -Append"
           )
           $script = $lines -join "`r`n"
           New-Item -ItemType Directory -Force -Path "C:\persist" | Out-Null
