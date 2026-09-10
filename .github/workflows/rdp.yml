@@ -22,12 +22,27 @@ jobs:
         env:
           RDP_PASS: ${{ secrets.RDP_PASS }}
         run: |
-          # mask so it never appears in logs even in env dumps
           echo "::add-mask::$env:RDP_PASS"
           $securePass = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
           New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+
+      - name: Restore data from backup repo
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $owner = "$env:GITHUB_REPOSITORY_OWNER"
+          $dst = "C:\persist"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          git clone --depth 1 "https://x-access-token:$env:BACKUP_TOKEN@github.com/$owner/rdp-data.git" "$dst\repo" 2>&1 | Write-Host
+          if (Test-Path "$dst\repo\payload") {
+            Copy-Item "$dst\repo\payload\*" "$dst\" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "RESTORED: payload -> C:\persist"
+          } else {
+            Write-Host "RESTORE: no payload yet (first boot)"
+          }
 
       - name: Install AnyDesk
         continue-on-error: false
@@ -41,13 +56,19 @@ jobs:
           Invoke-WebRequest -Uri $adUrl -OutFile $adPath -UseBasicParsing
           Start-Process -FilePath $adPath -ArgumentList "--install","C:\AnyDesk","--start-with-win","--silent" -Wait
           Start-Sleep -Seconds 8
+          # Restore AnyDesk identity (stable ID) if backed up, BEFORE first service start
+          $persist = "C:\persist"
+          if (Test-Path "$persist\anydesk_conf\system.conf") {
+            Stop-Service AnyDesk -ErrorAction SilentlyContinue
+            Copy-Item "$persist\anydesk_conf\*" "$env:ProgramData\AnyDesk\" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "AnyDesk identity restored (stable ID)"
+          }
           cmd /c "echo $env:ANYDESK_PASS| ""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
           Start-Sleep -Seconds 3
           Stop-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
           Start-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 5
-          # Get the AnyDesk ID from service config (reliable source)
           $adId = ""
           for ($i=0; $i -lt 12 -and -not $adId; $i++) {
             Start-Sleep -Seconds 5
@@ -92,9 +113,44 @@ jobs:
           Start-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
 
+      - name: Install scheduled backup task (every 10 min)
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          $owner = "$env:GITHUB_REPOSITORY_OWNER"
+          $lines = @(
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            "$dst = 'C:\persist'",
+            "$repo = $dst + '\repo'",
+            "if (-not (Test-Path ($repo + '\.git'))) { exit }",
+            "Set-Location $repo",
+            "git config user.email backup@rdp.local",
+            "git config user.name rdp-backup",
+            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\anydesk_conf') | Out-Null",
+            "Copy-Item ($env:ProgramData + '\AnyDesk\system.conf') ($repo + '\payload\anydesk_conf\') -Force",
+            "Copy-Item ($env:ProgramData + '\AnyDesk\service.conf') ($repo + '\payload\anydesk_conf\') -Force -ErrorAction SilentlyContinue",
+            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\desktop') | Out-Null",
+            "Copy-Item ($env:USERPROFILE + '\Desktop\*') ($repo + '\payload\desktop\') -Recurse -Force -ErrorAction SilentlyContinue",
+            "New-Item -ItemType Directory -Force -Path ($repo + '\payload\documents') | Out-Null",
+            "Copy-Item ($env:USERPROFILE + '\Documents\*') ($repo + '\payload\documents\') -Recurse -Force -ErrorAction SilentlyContinue",
+            "git add -A",
+            "git diff --cached --quiet",
+            "if ($LASTEXITCODE -eq 0) { exit }",
+            "git commit -m ('auto backup ' + (Get-Date -Format 'yyyy-MM-dd HH:mm'))",
+            "git push origin master 2>&1 | Out-Null",
+            "git push origin main 2>&1 | Out-Null"
+          )
+          $script = $lines -join "`r`n"
+          New-Item -ItemType Directory -Force -Path "C:\persist" | Out-Null
+          $script | Out-File -FilePath "C:\persist\backup_task.ps1" -Encoding UTF8
+          $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File C:\persist\backup_task.ps1"
+          $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Hours 6)
+          Register-ScheduledTask -TaskName "RDPBackup" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest -Force | Out-Null
+          Start-ScheduledTask -TaskName "RDPBackup"
+          Write-Host "Backup task installed (10 min interval)"
+
       - name: Report Access
         run: |
-          # NO passwords in public logs — only IP + AnyDesk ID (useless without the password)
           Write-Host "RDP_IP=$env:TAILSCALE_IP"
           Write-Host "RDP_USER=RDP"
           Write-Host "ANYDESK_ID=$env:ANYDESK_ID"
