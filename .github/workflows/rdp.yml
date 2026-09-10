@@ -149,17 +149,14 @@ jobs:
             "('done ' + (Get-Date -Format 'HH:mm:ss')) | Out-File $log -Append"
           )
           $script = $lines -join "`r`n"
-          $script = "try { & 'C:\persist\backup_task.ps1' } catch { ('CAUGHT ' + $_.Exception.Message) | Out-File 'C:\persist\backup_log.txt' -Append }"
-          $script | Out-File -FilePath "C:\persist\backup_wrapper.ps1" -Encoding ASCII
-          $action = New-ScheduledTaskAction -Execute "C:\Program Files\PowerShell\7\pwsh.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\persist\backup_wrapper.ps1" -WorkingDirectory "C:\persist"
-          $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Hours 6)
-          Register-ScheduledTask -TaskName "RDPBackup" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest -Force | Out-Null
-          Start-ScheduledTask -TaskName "RDPBackup"
-          Write-Host "Backup task installed (pwsh7 wrapper, first fire T+1min)"
-          Start-Sleep -Seconds 90
-          Write-Host "=== POST-FIRE LOG CHECK (T+90s) ==="
+          $script | Out-File -FilePath "C:\persist\backup_task.ps1" -Encoding ASCII
+          # launch detached backup loop as child of runner agent (Task Scheduler is broken on GH runners)
+          Start-Process -FilePath "C:\Program Files\PowerShell\7\pwsh.exe" -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-Command","while (`$true) { try { & 'C:\persist\backup_task.ps1' } catch { ('CAUGHT ' + `$_.Exception.Message) | Out-File 'C:\persist\backup_log.txt' -Append }; Start-Sleep -Seconds 600 }" -WindowStyle Hidden
+          Write-Host "Backup loop launched (detached pwsh, 10-min cycle)"
+          Start-Sleep -Seconds 45
+          Write-Host "=== POST-FIRE LOG CHECK (T+45s) ==="
           if (Test-Path "C:\persist\backup_log.txt") { Get-Content "C:\persist\backup_log.txt" | Write-Host }
-          else { Write-Host "backup_log.txt STILL MISSING at T+90s" }
+          else { Write-Host "backup_log.txt MISSING at T+45s" }
 
       - name: Report Access
         run: |
