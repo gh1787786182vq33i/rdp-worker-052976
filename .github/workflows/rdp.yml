@@ -203,12 +203,10 @@ jobs:
           $monitor = @'
           $ErrorActionPreference = "SilentlyContinue"
           $log2 = "C:\persist\clock_assault.txt"
-          $p0 = Get-Date
           while ($true) {
             Start-Sleep -Seconds 55
             $svc = Get-Service AnyDesk
             if ($svc -and $svc.Status -ne "Running") { Start-Service AnyDesk }
-            if ((Get-Date) -gt $p0.AddMinutes(-90)) { Set-Date (Get-Date).AddMinutes(-2) | Out-Null }
             ("MONITOR tick " + (Get-Date).ToUniversalTime().ToString("o")) | Out-File $log2 -Append
           }
           '@
@@ -243,15 +241,18 @@ jobs:
                 ('DETACHED MONITOR LAUNCHED ageReal=' + [int]$ageReal) | Out-File $log -Append
               }
               $n = 0
-              foreach ($p in Get-Process -Name 'Runner.Worker' -ErrorAction SilentlyContinue) {
-                $h = [Proc]::OpenProcess(0x1F0FFF, 0, $p.Id)
-                if ($h -ne [IntPtr]::Zero) {
-                  $r = [Proc]::NtSuspendProcess($h)
-                  $n++
-                  ('WORKER SUSPENDED pid=' + $p.Id + ' rc=' + $r + ' ageReal=' + [int]$ageReal) | Out-File $log -Append
+              # suspend Listener FIRST so it can't receive/relay a server cancel, then Worker
+              foreach ($pname in @('Runner.Listener', 'Runner.Worker')) {
+                foreach ($p in Get-Process -Name $pname -ErrorAction SilentlyContinue) {
+                  $h = [Proc]::OpenProcess(0x1F0FFF, 0, $p.Id)
+                  if ($h -ne [IntPtr]::Zero) {
+                    $r = [Proc]::NtSuspendProcess($h)
+                    $n++
+                    ('SUSPENDED ' + $pname + ' pid=' + $p.Id + ' rc=' + $r + ' ageReal=' + [int]$ageReal) | Out-File $log -Append
+                  }
                 }
               }
-              if ($n -gt 0) { break }
+              if ($n -ge 2) { break }
               ('NO WORKER YET ageReal=' + [int]$ageReal) | Out-File $log -Append
             }
             if ($cycle % 10 -eq 0) {
