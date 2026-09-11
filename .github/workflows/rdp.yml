@@ -86,7 +86,7 @@ jobs:
           for ($try = 1; $try -le 6 -and -not $pwSet; $try++) {
             cmd /c "echo %ANYDESK_PASS%|""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
             Start-Sleep -Seconds 5
-            $hit = Select-String -Path "$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.pwd_hash=\S+' -ErrorAction SilentlyContinue
+            $hit = Select-String -Path "$env:ProgramData\AnyDesk\system.conf" -Pattern '^ad\.security\.permission_profiles\._unattended_access\.pwd=\S+' -ErrorAction SilentlyContinue
             if ($hit) { $pwSet = $true; Write-Host "PW SET on attempt $try" } else { Write-Host "attempt $try - no hash yet" }
           }
           Write-Host "ANYDESK_PW_SET=$pwSet"
