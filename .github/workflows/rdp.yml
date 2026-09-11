@@ -63,8 +63,25 @@ jobs:
             Copy-Item "$persist\anydesk_conf\*" "$env:ProgramData\AnyDesk\" -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "AnyDesk identity restored (stable ID)"
           }
-          cmd /c "echo $env:ANYDESK_PASS| ""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
+          # Enable unattended access so the password works without interactive approval
+          $adConf = "$env:ProgramData\AnyDesk\system.conf"
+          if (Test-Path $adConf) {
+            $cfg = Get-Content $adConf | Where-Object { $_ -notmatch '^ad\.security\.enable_unattended_access=' }
+            $cfg += 'ad.security.enable_unattended_access=1'
+            Set-Content -Path $adConf -Value $cfg
+          }
+          Stop-Service AnyDesk -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Start-Service AnyDesk -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 4
+          # Set unattended password via stdin (no trailing space/newline beyond LF)
+          $env:ANYDESK_PASS | & "C:\AnyDesk\AnyDesk.exe" --set-password 2>&1 | Write-Host
           Start-Sleep -Seconds 3
+          # Verify password hash + unattended flag actually landed
+          $hashHit = Select-String -Path "$env:ProgramData\AnyDesk\system.conf","$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.hash=' -ErrorAction SilentlyContinue
+          if ($hashHit) { Write-Host "ANYDESK_PW_HASH_SET=yes" } else { Write-Host "ANYDESK_PW_HASH_MISSING" }
+          $unatt = Select-String -Path $adConf -Pattern 'enable_unattended_access=1' -Quiet -ErrorAction SilentlyContinue
+          Write-Host "ANYDESK_UNATTENDED=$unatt"
           Stop-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
           Start-Service AnyDesk -ErrorAction SilentlyContinue
