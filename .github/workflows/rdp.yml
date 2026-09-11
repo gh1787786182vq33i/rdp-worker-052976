@@ -87,9 +87,6 @@ jobs:
           if ($hashHit) { $hv = ($hashHit.Line -split '=',2)[1]; Write-Host "ANYDESK_PW_HASH_PRESENT len=$($hv.Length)"; Write-Host "::add-mask::$hv"; Write-Host "hash_value_preview_first4=$($hv.Substring(0,[Math]::Min(4,$hv.Length)))" } else { Write-Host "ANYDESK_PW_HASH_MISSING"; $raw = Get-Content "$env:ProgramData\AnyDesk\service.conf" | Select-String 'pwd_hash'; Write-Host "RAWLINE=$($raw.Line)" }
           $unatt = Select-String -Path $adConf -Pattern 'enable_unattended_access=1' -Quiet -ErrorAction SilentlyContinue
           Write-Host "ANYDESK_UNATTENDED=$unatt"
-          Stop-Service AnyDesk -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 3
-          Start-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 5
           $adId = ""
           for ($i=0; $i -lt 12 -and -not $adId; $i++) {
