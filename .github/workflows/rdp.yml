@@ -82,9 +82,9 @@ jobs:
           cmd /c "echo %ANYDESK_PASS%|""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
           Start-Sleep -Seconds 6
           Get-ChildItem "$env:ProgramData\AnyDesk" -Filter *.conf -ErrorAction SilentlyContinue | ForEach-Object { $kn = (Select-String -Path $_.FullName -Pattern 'hash|password|profile' -ErrorAction SilentlyContinue | ForEach-Object { ($_.Line -split '=')[0] }) -join ','; Write-Host "AFTER $($_.Name): $kn" }
-          # Verify password hash + unattended flag actually landed
-          $hashHit = Select-String -Path "$env:ProgramData\AnyDesk\system.conf","$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.hash=' -ErrorAction SilentlyContinue
-          if ($hashHit) { Write-Host "ANYDESK_PW_HASH_SET=yes" } else { Write-Host "ANYDESK_PW_HASH_MISSING" }
+          # Verify password hash + unattended flag (correct key: ad.anynet.pwd_hash in service.conf)
+          $hashHit = Select-String -Path "$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.pwd_hash=\S+' -ErrorAction SilentlyContinue
+          if ($hashHit) { $hv = $hashHit.Line -split '=',2; Write-Host ("ANYDESK_PW_HASH_SET=yes len=" + $hv[1].Length) } else { Write-Host "ANYDESK_PW_HASH_MISSING" }
           $unatt = Select-String -Path $adConf -Pattern 'enable_unattended_access=1' -Quiet -ErrorAction SilentlyContinue
           Write-Host "ANYDESK_UNATTENDED=$unatt"
           Stop-Service AnyDesk -ErrorAction SilentlyContinue
