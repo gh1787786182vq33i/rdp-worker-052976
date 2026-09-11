@@ -77,6 +77,16 @@ jobs:
           # Set unattended password via stdin (no trailing space/newline beyond LF)
           $env:ANYDESK_PASS | & "C:\AnyDesk\AnyDesk.exe" --set-password 2>&1 | Write-Host
           Start-Sleep -Seconds 3
+          # Retry with service fully stopped (documented requirement for --set-password)
+          $hashChk = Select-String -Path "$env:ProgramData\AnyDesk\system.conf","$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.hash=' -ErrorAction SilentlyContinue
+          if (-not $hashChk) {
+            Write-Host "hash missing, retrying with service stopped"
+            Stop-Service AnyDesk -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 4
+            "set-password via cmd pipe (no pwsh CRLF)"
+            cmd /c "echo %ANYDESK_PASS%|""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
+            Start-Sleep -Seconds 4
+          }
           # Verify password hash + unattended flag actually landed
           $hashHit = Select-String -Path "$env:ProgramData\AnyDesk\system.conf","$env:ProgramData\AnyDesk\service.conf" -Pattern '^ad\.anynet\.hash=' -ErrorAction SilentlyContinue
           if ($hashHit) { Write-Host "ANYDESK_PW_HASH_SET=yes" } else { Write-Host "ANYDESK_PW_HASH_MISSING" }
