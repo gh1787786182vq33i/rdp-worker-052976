@@ -84,9 +84,11 @@ jobs:
             Stop-Service AnyDesk -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 4
             "set-password via cmd pipe (no pwsh CRLF)"
-              $pw = $env:ANYDESK_PASS
-            $input = ($pw + "`r`n" + $pw + "`r`n")
-            $input | & "C:\AnyDesk\AnyDesk.exe" --set-password 2>&1 | Write-Host
+              Start-Service AnyDesk -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 4
+            $pw = $env:ANYDESK_PASS
+            "pass1/pass2 both lines via cmd subshell:"
+            cmd /c "(echo $pw& echo $pw)|""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
             Start-Sleep -Seconds 5
           }
           # Verify password hash + unattended flag actually landed
