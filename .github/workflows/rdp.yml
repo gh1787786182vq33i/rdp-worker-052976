@@ -145,7 +145,7 @@ jobs:
             '  try { $get = Invoke-RestMethod -Uri $url -Headers $hdr -Method GET; $sha = $get.sha } catch { if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw } }',
             '  $body = @{ message = (''auto backup '' + (Get-Date -Format ''HH:mm'') + '' '' + $k); content = $b64; branch = ''main'' } | ConvertTo-Json',
             '  if ($sha) { $body = @{ message = (''auto backup '' + (Get-Date -Format ''HH:mm'') + '' '' + $k); content = $b64; branch = ''main''; sha = $sha } | ConvertTo-Json }',
-            '  try { Invoke-RestMethod -Uri $url -Headers $hdr -Method PUT -Body $body -ContentType ''application/json'' | Out-Null; (''OK '' + $k) | Out-File $log -Append } catch { $code = '''', $e = $_.ErrorDetails.Message; try { $code = $_.Exception.Response.StatusCode.value__ } catch {}; (''FAIL '' + $k + '' code='' + $code + '' '' + $_.Exception.Message + '' '' + $e) | Out-File $log -Append }',
+            '  try { Invoke-RestMethod -Uri $url -Headers $hdr -Method PUT -Body $body -ContentType ''application/json'' | Out-Null; (''OK '' + $k) | Out-File $log -Append } catch { (''FAIL '' + $k + '' '' + $_.Exception.Message) | Out-File $log -Append }',
             '}',
             '(''done '' + (Get-Date -Format ''HH:mm:ss'')) | Out-File $log -Append'
           )
