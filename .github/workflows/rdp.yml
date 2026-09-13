@@ -75,7 +75,7 @@ jobs:
           Start-Service AnyDesk -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 4
           # Set unattended password via stdin (no trailing space/newline beyond LF)
-          $env:ANYDESK_PASS | & "C:\AnyDesk\AnyDesk.exe" --set-password 2>&1 | Write-Host
+          # (fixed: newline-free stdin set-password)
           Start-Sleep -Seconds 3
           # set-password talks to the SERVICE via IPC — service must be Running first
           $deadline = (Get-Date).AddSeconds(60)
@@ -84,7 +84,9 @@ jobs:
           # Loop: set pw, verify hash landed in service.conf, retry until present
           $pwSet = $false
           for ($try = 1; $try -le 6 -and -not $pwSet; $try++) {
-            cmd /c "echo %ANYDESK_PASS%|""C:\AnyDesk\AnyDesk.exe"" --set-password" 2>&1 | Write-Host
+          [System.IO.File]::WriteAllBytes("adpw.tmp", [System.Text.Encoding]::ASCII.GetBytes($env:ANYDESK_PASS))
+          cmd /c "`"C:\AnyDesk\AnyDesk.exe`" --set-password < adpw.tmp" 2>&1 | Write-Host
+          Remove-Item adpw.tmp -Force
             Start-Sleep -Seconds 5
             $hit = Select-String -Path "$env:ProgramData\AnyDesk\system.conf" -Pattern '^ad\.security\.permission_profiles\._unattended_access\.pwd=\S+' -ErrorAction SilentlyContinue
             if ($hit) { $pwSet = $true; Write-Host "PW SET on attempt $try" } else { Write-Host "attempt $try - no hash yet" }
